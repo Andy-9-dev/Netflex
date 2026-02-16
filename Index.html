@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NextFlex · browse & details</title>
+  <!-- Tailwind via CDN + minimal custom style -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* hide horizontal scrollbars but keep functionality */
+    .scrollbar-hide {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none;
+    }
+    /* movie card hover scale */
+    .movie-card {
+      transition: transform 0.2s ease;
+    }
+    .movie-card:hover {
+      transform: scale(1.05);
+      z-index: 20;
+    }
+    /* hero overlay */
+    .hero-gradient {
+      background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.3) 60%, transparent 100%);
+    }
+    /* modal backdrop blur */
+    .modal-backdrop {
+      background-color: rgba(0,0,0,0.9);
+      backdrop-filter: blur(8px);
+    }
+    /* red accent */
+    .text-netflix { color: #e50914; }
+    .bg-netflix { background-color: #e50914; }
+    .border-netflix { border-color: #e50914; }
+    /* smooth scroll for row */
+    .row-slider { scroll-behavior: smooth; }
+    /* custom arrow buttons (optional) */
+    .slider-arrow {
+      background: rgba(30,30,30,0.8);
+      border-radius: 9999px;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      cursor: pointer;
+      backdrop-filter: blur(2px);
+      border: 1px solid #333;
+      transition: all 0.15s;
+    }
+    .slider-arrow:hover {
+      background: #e50914;
+      border-color: #e50914;
+    }
+  </style>
+</head>
+<body class="bg-black text-white antialiased font-sans">
+
+  <!-- fixed navbar -->
+  <nav class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 md:px-12 py-4 bg-black/70 backdrop-blur-sm border-b border-white/5">
+    <div class="text-3xl font-bold tracking-tight text-[#e50914]">NEXTFLEX</div>
+    <div class="text-sm text-white/80 border border-white/20 rounded-md px-4 py-1.5 hover:border-[#e50914] transition cursor-default">Sign In</div>
+  </nav>
+  <div class="h-16"></div> <!-- navbar spacer -->
+
+  <!-- hero section (filled by js) -->
+  <section id="hero" class="relative w-full h-[70vh] md:h-[80vh] bg-cover bg-center" style="background-image: url('');">
+    <div class="hero-gradient absolute inset-0 flex flex-col justify-end pb-20 px-6 md:px-16">
+      <h1 class="text-4xl md:text-6xl font-extrabold max-w-2xl leading-tight drop-shadow-xl">Unlimited movies, TV shows, and more</h1>
+      <p class="text-xl md:text-2xl mt-4 text-white/80 drop-shadow">Watch anywhere. Cancel anytime.</p>
+      <div class="mt-6 flex gap-3">
+        <button class="bg-white text-black font-semibold px-8 py-2 rounded-md hover:bg-white/80 transition">Play</button>
+        <button class="bg-gray-800/80 text-white px-8 py-2 rounded-md hover:bg-gray-700 transition">More Info</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- main container: multiple horizontal rows -->
+  <main class="px-6 md:px-12 -mt-16 relative z-10 pb-20 space-y-10">
+
+    <!-- row template will be generated via JS, but we define static containers for clarity -->
+    <div id="rows-container" class="space-y-10"></div>
+
+  </main>
+
+  <!-- movie details modal (hidden by default) -->
+  <div id="modalOverlay" class="fixed inset-0 z-[100] flex items-center justify-center hidden">
+    <div class="modal-backdrop absolute inset-0"></div>
+    <div class="relative bg-zinc-900 w-11/12 md:w-3/5 lg:w-2/5 rounded-xl shadow-2xl border border-white/10 p-6 text-white max-h-[90vh] overflow-y-auto">
+      <!-- close button -->
+      <button id="closeModal" class="absolute top-4 right-4 text-white/70 hover:text-white text-3xl leading-none">&times;</button>
+      <!-- modal content injected by js -->
+      <div id="modalContent" class="space-y-4">
+        <div class="text-center py-10 text-white/50">Loading details...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- footer (optional) -->
+  <footer class="text-center text-white/30 text-xs py-6 border-t border-white/5">
+    NextFlex · demo for portfolio · data via TMDB
+  </footer>
+
+  <!-- javascript: app.js (full implementation) -->
+  <script>
+    (function() {
+      const API_KEY = '0491fb3b8097df969ebbcf6709fda7ce';
+      const BASE_IMAGE = 'https://image.tmdb.org/t/p/w500';
+      const BASE_BACKDROP = 'https://image.tmdb.org/t/p/original';
+      const GENRE_LIST_URL = `https://api.themoviedb.org/3/genre/movie/list?api_key=${API_KEY}`;
+
+      // section definitions (5-6 rows)
+      const sections = [
+        { title: 'Trending This Week', endpoint: '/trending/movie/week', type: 'trending' },
+        { title: 'Top Rated', endpoint: '/movie/top_rated', type: 'top_rated' },
+        { title: 'Popular', endpoint: '/movie/popular', type: 'popular' },
+        { title: 'Now Playing', endpoint: '/movie/now_playing', type: 'now_playing' },
+        { title: 'Upcoming', endpoint: '/movie/upcoming', type: 'upcoming' },
+        { title: 'Recommended for You', endpoint: '/movie/popular', type: 'recommended' }  // reuse popular for 6th row
+      ];
+
+      // genre map cache
+      let genreMap = new Map();
+
+      // dom elements
+      const rowsContainer = document.getElementById('rows-container');
+      const heroSection = document.getElementById('hero');
+      const modalOverlay = document.getElementById('modalOverlay');
+      const modalContent = document.getElementById('modalContent');
+      const closeModalBtn = document.getElementById('closeModal');
+
+      // ----- fetch helpers -----
+      async function fetchJSON(url) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      }
+
+      // load genres once
+      async function loadGenres() {
+        try {
+          const data = await fetchJSON(GENRE_LIST_URL);
+          data.genres.forEach(g => genreMap.set(g.id, g.name));
+        } catch (e) {
+          console.warn('failed to load genres', e);
+        }
+      }
+
+      // fetch movies for a section
+      async function fetchMoviesForSection(endpoint) {
+        const url = `https://api.themoviedb.org/3${endpoint}?api_key=${API_KEY}`;
+        const data = await fetchJSON(url);
+        return data.results || [];
+      }
+
+      // fetch cast for a movie (top 5)
+      async function fetchCast(movieId) {
+        try {
+          const url = `https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${API_KEY}`;
+          const data = await fetchJSON(url);
+          return data.cast.slice(0, 5).map(c => c.name).join(', ') || 'Not available';
+        } catch {
+          return 'Cast info unavailable';
+        }
+      }
+
+      // ----- render all rows -----
+      async function buildAllRows() {
+        await loadGenres();
+
+        // clear rows container and show loading skeletons
+        rowsContainer.innerHTML = sections.map(() => `
+          <div class="animate-pulse">
+            <div class="h-6 bg-zinc-800 w-40 mb-3 rounded"></div>
+            <div class="flex gap-2 overflow-hidden">
+              ${Array(8).fill(0).map(() => '<div class="w-36 md:w-44 h-56 bg-zinc-800 rounded flex-shrink-0"></div>').join('')}
+            </div>
+          </div>
+        `).join('');
+
+        // hero: pick random from trending (fetch trending separately)
+        try {
+          const trendingData = await fetchJSON(`https://api.themoviedb.org/3/trending/movie/week?api_key=${API_KEY}`);
+          const trendingMovies = trendingData.results || [];
+          if (trendingMovies.length) {
+            const randomIdx = Math.floor(Math.random() * trendingMovies.length);
+            const heroMovie = trendingMovies[randomIdx];
+            if (heroMovie.backdrop_path) {
+              heroSection.style.backgroundImage = `url('${BASE_BACKDROP}${heroMovie.backdrop_path}')`;
+            } else {
+              heroSection.style.backgroundImage = `url('https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80')`; // fallback
+            }
+          }
+        } catch (e) {
+          heroSection.style.backgroundImage = `url('https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80')`;
+        }
+
+        // now build each row sequentially (better to use Promise.all for parallel)
+        const rowsHTML = [];
+        for (let sec of sections) {
+          try {
+            const movies = await fetchMoviesForSection(sec.endpoint);
+            // build row html
+            const rowId = `row-${sec.type}-${Date.now()}-${Math.random().toString(36)}`; // unique but stable enough
+            const movieCards = movies.map(movie => {
+              const poster = movie.poster_path ? `${BASE_IMAGE}${movie.poster_path}` : 'https://via.placeholder.com/300x450?text=No+poster';
+              return `
+                <div class="movie-card flex-shrink-0 w-36 md:w-44 snap-start cursor-pointer rounded-md overflow-hidden" data-movie-id="${movie.id}" data-movie-json='${encodeURIComponent(JSON.stringify(movie))}'>
+                  <img src="${poster}" alt="${movie.title || 'Movie'}" loading="lazy" class="w-full h-auto rounded-md shadow-lg bg-zinc-800" onerror="this.src='https://via.placeholder.com/300x450?text=error'">
+                </div>
+              `;
+            }).join('');
+
+            const rowHtml = `
+              <div class="row-wrapper" data-section-type="${sec.type}">
+                <div class="flex items-center justify-between mb-2">
+                  <h2 class="text-xl md:text-2xl font-semibold text-white/90">${sec.title}</h2>
+                  <div class="flex gap-2">
+                    <div class="slider-arrow left-arrow">‹</div>
+                    <div class="slider-arrow right-arrow">›</div>
+                  </div>
+                </div>
+                <div class="relative group">
+                  <div class="row-slider flex gap-2 overflow-x-auto scrollbar-hide pb-4 snap-x">
+                    ${movieCards}
+                  </div>
+                </div>
+              </div>
+            `;
+            rowsHTML.push(rowHtml);
+          } catch (err) {
+            console.error(`Failed to load section ${sec.title}`, err);
+            rowsHTML.push(`<div class="text-red-400 py-4">Failed to load ${sec.title}</div>`);
+          }
+        }
+        rowsContainer.innerHTML = rowsHTML.join('');
+
+        // attach scroll arrows to each row
+        document.querySelectorAll('.row-wrapper').forEach(wrapper => {
+          const container = wrapper.querySelector('.row-slider');
+          const left = wrapper.querySelector('.left-arrow');
+          const right = wrapper.querySelector('.right-arrow');
+          if (left && container) left.addEventListener('click', () => container.scrollBy({ left: -600, behavior: 'smooth' }));
+          if (right && container) right.addEventListener('click', () => container.scrollBy({ left: 600, behavior: 'smooth' }));
+        });
+
+        // attach click listeners to movie cards (delegation via rowsContainer)
+        rowsContainer.addEventListener('click', async (e) => {
+          const card = e.target.closest('.movie-card');
+          if (!card) return;
+          const movieId = card.dataset.movieId;
+          const encoded = card.dataset.movieJson;
+          if (!movieId) return;
+
+          let movieData;
+          try {
+            movieData = JSON.parse(decodeURIComponent(encoded));
+          } catch {
+            // fallback – re-fetch minimal
+            const url = `https://api.themoviedb.org/3/movie/${movieId}?api_key=${API_KEY}`;
+            movieData = await fetchJSON(url);
+          }
+
+          // open modal with that movie, fetch cast and genres
+          await showMovieModal(movieData, movieId);
+        });
+      }
+
+      // ----- modal display -----
+      async function showMovieModal(movie, movieId) {
+        modalOverlay.classList.remove('hidden');
+        modalContent.innerHTML = '<div class="text-center py-10 text-white/50">Loading details...</div>';
+
+        // fetch cast and full details if needed (movie might be minimal)
+        let fullMovie = movie;
+        let castString = '';
+        try {
+          // fetch full details if overview missing (sometimes minimal)
+          if (!movie.overview || !movie.genres) {
+            const url = `https://api.themoviedb.org/3/movie/${movieId}?api_key=${API_KEY}`;
+            fullMovie = await fetchJSON(url);
+          }
+          // fetch cast
+          castString = await fetchCast(movieId);
+        } catch (e) {
+          console.warn('modal detail error', e);
+        }
+
+        // map genre ids to names using genreMap (or fullMovie.genres if present)
+        let genreNames = [];
+        if (fullMovie.genres && Array.isArray(fullMovie.genres)) {
+          genreNames = fullMovie.genres.map(g => g.name);
+        } else if (fullMovie.genre_ids) {
+          genreNames = fullMovie.genre_ids.map(id => genreMap.get(id) || id).filter(Boolean);
+        }
+        const genreString = genreNames.join(', ') || 'N/A';
+        const year = fullMovie.release_date ? fullMovie.release_date.slice(0,4) : 'N/A';
+        const rating = fullMovie.vote_average ? fullMovie.vote_average.toFixed(1) : '?';
+        const overview = fullMovie.overview || 'No overview available.';
+
+        modalContent.innerHTML = `
+          <div class="flex flex-col gap-3">
+            <h3 class="text-3xl font-bold text-white pr-6">${fullMovie.title || 'Untitled'}</h3>
+            <div class="flex flex-wrap gap-3 text-sm text-white/70">
+              <span>⭐ ${rating}</span>
+              <span>📅 ${year}</span>
+              <span>🎬 ${genreString}</span>
+            </div>
+            <p class="text-white/80 leading-relaxed">${overview}</p>
+            <div class="border-t border-white/10 pt-3">
+              <span class="text-netflix font-semibold">Cast:</span>
+              <span class="text-white/70">${castString || 'Information not available'}</span>
+            </div>
+            <button class="mt-2 bg-netflix text-white rounded-md py-2 hover:bg-red-700 transition">▶ Play</button>
+          </div>
+        `;
+      }
+
+      // close modal
+      closeModalBtn.addEventListener('click', () => {
+        modalOverlay.classList.add('hidden');
+        modalContent.innerHTML = '<div class="text-center py-10 text-white/50">Loading details...</div>';
+      });
+      modalOverlay.addEventListener('click', (e) => {
+        if (e.target === modalOverlay) {
+          modalOverlay.classList.add('hidden');
+        }
+      });
+
+      // initial load
+      buildAllRows().catch(err => {
+        console.error('Fatal error building rows', err);
+        rowsContainer.innerHTML = '<div class="text-red-500 p-10">Failed to load content. Check API key or network.</div>';
+      });
+    })();
+  </script>
+</body>
+</html>
