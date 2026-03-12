@@ -109,8 +109,11 @@
   <!-- javascript: app.js (full implementation) -->
   <script>
     (function() {
+      // Use environment variable for API key - will be replaced during build
+      const API_KEY = process.env.TMDB_API_KEY || '0491fb3b8097df969ebbcf6709fda7ce';
       const BASE_IMAGE = 'https://image.tmdb.org/t/p/w500';
       const BASE_BACKDROP = 'https://image.tmdb.org/t/p/original';
+      const GENRE_LIST_URL = `https://api.themoviedb.org/3/genre/movie/list?api_key=${API_KEY}`;
 
       // section definitions (5-6 rows)
       const sections = [
@@ -142,7 +145,7 @@
       // load genres once
       async function loadGenres() {
         try {
-          const data = await fetchJSON('/api/genres');
+          const data = await fetchJSON(GENRE_LIST_URL);
           data.genres.forEach(g => genreMap.set(g.id, g.name));
         } catch (e) {
           console.warn('failed to load genres', e);
@@ -151,7 +154,7 @@
 
       // fetch movies for a section
       async function fetchMoviesForSection(endpoint) {
-        const url = `/api/movies?endpoint=${encodeURIComponent(endpoint)}`;
+        const url = `https://api.themoviedb.org/3${endpoint}?api_key=${API_KEY}`;
         const data = await fetchJSON(url);
         return data.results || [];
       }
@@ -159,7 +162,7 @@
       // fetch cast for a movie (top 5)
       async function fetchCast(movieId) {
         try {
-          const url = `/api/credits?movieId=${movieId}`;
+          const url = `https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${API_KEY}`;
           const data = await fetchJSON(url);
           return data.cast.slice(0, 5).map(c => c.name).join(', ') || 'Not available';
         } catch {
@@ -183,7 +186,7 @@
 
         // hero: pick random from trending (fetch trending separately)
         try {
-          const trendingData = await fetchJSON('/api/movies?endpoint=' + encodeURIComponent('/trending/movie/week'));
+          const trendingData = await fetchJSON(`https://api.themoviedb.org/3/trending/movie/week?api_key=${API_KEY}`);
           const trendingMovies = trendingData.results || [];
           if (trendingMovies.length) {
             const randomIdx = Math.floor(Math.random() * trendingMovies.length);
@@ -280,7 +283,7 @@
         try {
           // fetch full details if overview missing (sometimes minimal)
           if (!movie.overview || !movie.genres) {
-            const url = `/api/movies?endpoint=${encodeURIComponent(`/movie/${movieId}`)}`;
+            const url = `https://api.themoviedb.org/3/movie/${movieId}?api_key=${API_KEY}`;
             fullMovie = await fetchJSON(url);
           }
           // fetch cast
