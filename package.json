@@ -1,0 +1,17 @@
+{
+  "name": "nextflex-app",
+  "version": "1.0.0",
+  "description": "Netflix-style movie browser using TMDB API",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Static site - no build needed'",
+    "start": "vercel dev"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["movies", "tmdb", "netflix", "streaming"],
+  "author": "",
+  "license": "MIT"
+}
